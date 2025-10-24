@@ -81,7 +81,8 @@ async def generate_character(user_profile: UserProfile) -> Dict:
         # Generate initial message
         initial_message = character_generator.create_initial_message(
             character_settings["name"],
-            user_profile
+            user_profile,
+            character_settings["gender"]
         )
 
         return {
@@ -197,7 +198,8 @@ async def create_character_v2(user_profile: UserProfile, db: Session = Depends(g
         # Generate initial message
         initial_message = character_generator.create_initial_message(
             character_settings["name"],
-            user_profile
+            user_profile,
+            character_settings["gender"]
         )
 
         # Save initial message
@@ -784,7 +786,7 @@ async def ui2():
                 </div>
                 <div class="form-group">
                     <label>你喜歡男生還是女生？</label>
-                    <select id="userPreference">
+                    <select id="userPreference" onchange="updateCharacterOptions()">
                         <option value="">請選擇</option>
                         <option value="男">男生</option>
                         <option value="女">女生</option>
@@ -818,7 +820,7 @@ async def ui2():
 
                 <div class="form-group">
                     <label>性格特質（可多選）：</label>
-                    <div class="checkbox-group">
+                    <div class="checkbox-group" id="traitsContainer">
                         <div class="checkbox-item">
                             <input type="checkbox" id="trait1" value="溫柔">
                             <label for="trait1" style="display:inline">溫柔</label>
@@ -925,6 +927,86 @@ async def ui2():
             let characterId = null;
             let favorabilityLevel = 1;
             let messageCount = 0;
+
+            // Gender-specific options
+            const femaleTraits = [
+                {value: '溫柔', label: '溫柔'},
+                {value: '活潑', label: '活潑'},
+                {value: '體貼', label: '體貼'},
+                {value: '幽默', label: '幽默'},
+                {value: '知性', label: '知性'},
+                {value: '可愛', label: '可愛'}
+            ];
+
+            const maleTraits = [
+                {value: '成熟穩重', label: '成熟穩重'},
+                {value: '陽光開朗', label: '陽光開朗'},
+                {value: '溫柔體貼', label: '溫柔體貼'},
+                {value: '霸氣強勢', label: '霸氣強勢'},
+                {value: '幽默風趣', label: '幽默風趣'},
+                {value: '斯文知性', label: '斯文知性'}
+            ];
+
+            const femaleTalkingStyles = [
+                {value: '溫柔體貼', label: '溫柔體貼'},
+                {value: '活潑開朗', label: '活潑開朗'},
+                {value: '知性優雅', label: '知性優雅'},
+                {value: '可愛俏皮', label: '可愛俏皮'}
+            ];
+
+            const maleTalkingStyles = [
+                {value: '成熟穩重', label: '成熟穩重'},
+                {value: '陽光活潑', label: '陽光活潑'},
+                {value: '溫柔紳士', label: '溫柔紳士'},
+                {value: '霸氣強勢', label: '霸氣強勢'},
+                {value: '知性優雅', label: '知性優雅'},
+                {value: '幽默風趣', label: '幽默風趣'}
+            ];
+
+            function updateCharacterOptions() {
+                const preference = document.getElementById('userPreference').value;
+                const traitsContainer = document.getElementById('traitsContainer');
+                const talkingStyleSelect = document.getElementById('talkingStyle');
+
+                if (!preference || preference === '都可以') {
+                    // Default to female options
+                    updateTraits(femaleTraits);
+                    updateTalkingStyles(femaleTalkingStyles);
+                } else if (preference === '男') {
+                    // Male character options
+                    updateTraits(maleTraits);
+                    updateTalkingStyles(maleTalkingStyles);
+                } else {
+                    // Female character options
+                    updateTraits(femaleTraits);
+                    updateTalkingStyles(femaleTalkingStyles);
+                }
+            }
+
+            function updateTraits(traits) {
+                const container = document.getElementById('traitsContainer');
+                container.innerHTML = '';
+                traits.forEach((trait, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'checkbox-item';
+                    div.innerHTML = `
+                        <input type="checkbox" id="trait${index + 1}" value="${trait.value}">
+                        <label for="trait${index + 1}" style="display:inline">${trait.label}</label>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            function updateTalkingStyles(styles) {
+                const select = document.getElementById('talkingStyle');
+                select.innerHTML = '';
+                styles.forEach(style => {
+                    const option = document.createElement('option');
+                    option.value = style.value;
+                    option.textContent = style.label;
+                    select.appendChild(option);
+                });
+            }
 
             function nextStep(step) {
                 // Validate current step

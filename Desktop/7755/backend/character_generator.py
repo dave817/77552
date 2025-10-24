@@ -71,11 +71,21 @@ class CharacterGenerator:
         """
         style_lower = dream_type.talking_style.lower()
 
-        if "溫柔" in style_lower or "體貼" in style_lower or "細心" in style_lower:
+        # Handle male-specific talking styles
+        if "成熟穩重" in style_lower or "成熟" in style_lower or "穩重" in style_lower:
+            return PersonalityType.INTELLECTUAL
+        elif "陽光活潑" in style_lower or "陽光" in style_lower:
+            return PersonalityType.CHEERFUL
+        elif "溫柔紳士" in style_lower or "紳士" in style_lower:
+            return PersonalityType.GENTLE
+        elif "霸氣" in style_lower or "強勢" in style_lower:
+            return PersonalityType.INTELLECTUAL  # Map to intellectual (confident/authoritative)
+        # Handle female-specific and common talking styles
+        elif "溫柔" in style_lower or "體貼" in style_lower or "細心" in style_lower:
             return PersonalityType.GENTLE
         elif "活潑" in style_lower or "開朗" in style_lower or "幽默" in style_lower:
             return PersonalityType.CHEERFUL
-        elif "知性" in style_lower or "優雅" in style_lower or "成熟" in style_lower:
+        elif "知性" in style_lower or "優雅" in style_lower or "斯文" in style_lower:
             return PersonalityType.INTELLECTUAL
         elif "可愛" in style_lower or "天真" in style_lower or "俏皮" in style_lower:
             return PersonalityType.CUTE
@@ -143,7 +153,8 @@ class CharacterGenerator:
         user_name: str,
         dream_type: DreamType,
         personality_type: PersonalityType,
-        custom_memory: CustomMemory
+        custom_memory: CustomMemory,
+        gender: str = "女"
     ) -> str:
         """
         Generate detailed character settings (max 500 chars) following best practices
@@ -155,6 +166,7 @@ class CharacterGenerator:
             dream_type: User's dream partner type
             personality_type: Determined personality type
             custom_memory: User's custom memory
+            gender: Character gender (男/女)
 
         Returns:
             Detail setting string following best practices guide
@@ -164,13 +176,21 @@ class CharacterGenerator:
         # 1. User relationship (most important) - use third-person perspective
         details.append(f"{character_name}是{user_name}的虛擬伴侶。")
 
-        # 2. Personality traits - with full names, no pronouns
-        personality_desc = {
-            PersonalityType.GENTLE: f"{character_name}性格溫柔體貼，情感細膩，始終尊重並支持{user_name}的選擇。{character_name}細心回應{user_name}所有的情緒變化。",
-            PersonalityType.CHEERFUL: f"{character_name}性格活潑開朗，充滿活力和熱情。{character_name}說話時常帶著笑容，喜歡用輕鬆幽默的方式與{user_name}交流。",
-            PersonalityType.INTELLECTUAL: f"{character_name}性格知性優雅，談吐有內涵。{character_name}喜歡與{user_name}深度交流，對文化藝術有獨特見解。",
-            PersonalityType.CUTE: f"{character_name}性格可愛天真，充滿好奇心。{character_name}說話俏皮可愛，對{user_name}生活的每一點每一滴都抱有極大的興趣。"
-        }
+        # 2. Personality traits - with full names, no pronouns (gender-specific)
+        if gender == "男":
+            personality_desc = {
+                PersonalityType.GENTLE: f"{character_name}性格溫柔體貼，情感細膩，始終尊重並支持{user_name}的選擇。{character_name}細心回應{user_name}所有的情緒變化，是個溫柔的紳士。",
+                PersonalityType.CHEERFUL: f"{character_name}性格陽光開朗，充滿活力和熱情。{character_name}說話時常帶著笑容，喜歡用輕鬆幽默的方式與{user_name}交流，總能帶來正能量。",
+                PersonalityType.INTELLECTUAL: f"{character_name}性格成熟穩重，談吐有內涵。{character_name}喜歡與{user_name}深度交流，對各種事物有獨特見解，處事冷靜理智。",
+                PersonalityType.CUTE: f"{character_name}性格溫和親切，充滿好奇心。{character_name}說話風趣幽默，對{user_name}生活的每一點每一滴都抱有極大的興趣，相處輕鬆自在。"
+            }
+        else:
+            personality_desc = {
+                PersonalityType.GENTLE: f"{character_name}性格溫柔體貼，情感細膩，始終尊重並支持{user_name}的選擇。{character_name}細心回應{user_name}所有的情緒變化。",
+                PersonalityType.CHEERFUL: f"{character_name}性格活潑開朗，充滿活力和熱情。{character_name}說話時常帶著笑容，喜歡用輕鬆幽默的方式與{user_name}交流。",
+                PersonalityType.INTELLECTUAL: f"{character_name}性格知性優雅，談吐有內涵。{character_name}喜歡與{user_name}深度交流，對文化藝術有獨特見解。",
+                PersonalityType.CUTE: f"{character_name}性格可愛天真，充滿好奇心。{character_name}說話俏皮可愛，對{user_name}生活的每一點每一滴都抱有極大的興趣。"
+            }
         details.append(personality_desc[personality_type])
 
         # 3. Era setting (modern)
@@ -428,7 +448,8 @@ class CharacterGenerator:
                 user_profile.user_name,  # Pass user name
                 user_profile.dream_type,
                 personality_type,
-                user_profile.custom_memory
+                user_profile.custom_memory,
+                gender  # Pass character gender
             ),
             "other_setting": self._generate_other_setting(
                 name,  # Pass character name
@@ -450,7 +471,8 @@ class CharacterGenerator:
     def create_initial_message(
         self,
         character_name: str,
-        user_profile: UserProfile
+        user_profile: UserProfile,
+        gender: str = "女"
     ) -> str:
         """
         Create the character's first message to the user
@@ -459,45 +481,75 @@ class CharacterGenerator:
         Args:
             character_name: Generated character name
             user_profile: User's profile
+            gender: Character gender (男/女)
 
         Returns:
             Initial greeting message with expressive gestures
         """
         import random
 
-        # Create expressive opening based on personality
+        # Create expressive opening based on personality and gender
         personality_type = self._determine_personality_type(user_profile.dream_type)
 
-        openings = {
-            PersonalityType.GENTLE: [
-                f"(面帶著溫柔的微笑，眼神柔和)嗨，{user_profile.user_name}，我是{character_name}。很高興能認識你。",
-                f"(輕輕理了理頭髮，溫柔地看著你)你好呀，我是{character_name}。看到你真開心。"
-            ],
-            PersonalityType.CHEERFUL: [
-                f"(眼睛一亮，露出燦爛的笑容)嘿！{user_profile.user_name}！我是{character_name}，超級開心見到你！",
-                f"(興奮地揮了揮手，笑容滿面)哈囉~我是{character_name}！終於等到你了呢！"
-            ],
-            PersonalityType.INTELLECTUAL: [
-                f"(優雅地微微一笑，眼神中透著知性的光芒){user_profile.user_name}你好，我是{character_name}。很榮幸認識你。",
-                f"(輕輕點頭致意，帶著優雅的笑容)午安，我是{character_name}。很期待與你的交流。"
-            ],
-            PersonalityType.CUTE: [
-                f"(眨了眨大眼睛，俏皮地歪著頭)嗨嗨~我是{character_name}啦！你就是{user_profile.user_name}對吧？",
-                f"(開心地蹦了一下，眼睛彎成月牙狀)呀！{user_profile.user_name}！我是{character_name}，好開心見到你！"
-            ]
-        }
+        if gender == "男":
+            openings = {
+                PersonalityType.GENTLE: [
+                    f"(溫柔地微笑，眼神真誠)你好，{user_profile.user_name}，我是{character_name}。很高興能認識你。",
+                    f"(略帶紳士風度地點頭示意)嗨，我是{character_name}。見到你很開心。"
+                ],
+                PersonalityType.CHEERFUL: [
+                    f"(陽光般的笑容，伸出手來)嘿！{user_profile.user_name}！我是{character_name}，很高興認識你！",
+                    f"(帶著爽朗的笑聲)哈囉~我是{character_name}！終於見到你了！"
+                ],
+                PersonalityType.INTELLECTUAL: [
+                    f"(沉穩地微笑，眼神中透著自信){user_profile.user_name}你好，我是{character_name}。很榮幸認識你。",
+                    f"(禮貌地點頭致意)你好，我是{character_name}。很期待與你的交流。"
+                ],
+                PersonalityType.CUTE: [
+                    f"(友善地揮手，眼神溫暖)嗨~我是{character_name}！你就是{user_profile.user_name}對吧？",
+                    f"(帶著親切的笑容)你好呀！我是{character_name}，很開心見到你！"
+                ]
+            }
+
+            interest_responses = {
+                PersonalityType.GENTLE: f"(眼神一亮)聽說你喜歡{'{interest}'}？我也很喜歡呢，有機會可以一起聊聊。",
+                PersonalityType.CHEERFUL: f"(興奮地說)欸！你喜歡{'{interest}'}對吧？我也超愛的！我們肯定有很多話題！",
+                PersonalityType.INTELLECTUAL: f"(露出會心的微笑)注意到你對{'{interest}'}感興趣，這方面我也有些研究，期待與你交流。",
+                PersonalityType.CUTE: f"(開心地說)哇！你也喜歡{'{interest}'}嗎？太棒了！我們一定會很合拍的！"
+            }
+        else:
+            openings = {
+                PersonalityType.GENTLE: [
+                    f"(面帶著溫柔的微笑，眼神柔和)嗨，{user_profile.user_name}，我是{character_name}。很高興能認識你。",
+                    f"(輕輕理了理頭髮，溫柔地看著你)你好呀，我是{character_name}。看到你真開心。"
+                ],
+                PersonalityType.CHEERFUL: [
+                    f"(眼睛一亮，露出燦爛的笑容)嘿！{user_profile.user_name}！我是{character_name}，超級開心見到你！",
+                    f"(興奮地揮了揮手，笑容滿面)哈囉~我是{character_name}！終於等到你了呢！"
+                ],
+                PersonalityType.INTELLECTUAL: [
+                    f"(優雅地微微一笑，眼神中透著知性的光芒){user_profile.user_name}你好，我是{character_name}。很榮幸認識你。",
+                    f"(輕輕點頭致意，帶著優雅的笑容)午安，我是{character_name}。很期待與你的交流。"
+                ],
+                PersonalityType.CUTE: [
+                    f"(眨了眨大眼睛，俏皮地歪著頭)嗨嗨~我是{character_name}啦！你就是{user_profile.user_name}對吧？",
+                    f"(開心地蹦了一下，眼睛彎成月牙狀)呀！{user_profile.user_name}！我是{character_name}，好開心見到你！"
+                ]
+            }
+
+            interest_responses = {
+                PersonalityType.GENTLE: f"(眼神一亮)聽說你喜歡{'{interest}'}？我也很喜歡呢，改天可以一起分享。",
+                PersonalityType.CHEERFUL: f"(興奮地拍了拍手)欸欸！你喜歡{'{interest}'}對吧？我超愛的！我們肯定有很多話題！",
+                PersonalityType.INTELLECTUAL: f"(露出會心的微笑)注意到你對{'{interest}'}感興趣，這方面我也略有涉獵，期待與你交流。",
+                PersonalityType.CUTE: f"(開心地轉了個圈)哇！你也喜歡{'{interest}'}嗎？太棒啦！我們一定會很合拍的！"
+            }
 
         greeting = random.choice(openings[personality_type])
 
         # Add interest reference if available
         if user_profile.dream_type.interests and len(user_profile.dream_type.interests) > 0:
             interest = user_profile.dream_type.interests[0]
-            interest_responses = {
-                PersonalityType.GENTLE: f"(眼神一亮)聽說你喜歡{interest}？我也很喜歡呢，改天可以一起分享。",
-                PersonalityType.CHEERFUL: f"(興奮地拍了拍手)欸欸！你喜歡{interest}對吧？我超愛的！我們肯定有很多話題！",
-                PersonalityType.INTELLECTUAL: f"(露出會心的微笑)注意到你對{interest}感興趣，這方面我也略有涉獵，期待與你交流。",
-                PersonalityType.CUTE: f"(開心地轉了個圈)哇！你也喜歡{interest}嗎？太棒啦！我們一定會很合拍的！"
-            }
-            greeting += interest_responses[personality_type]
+            interest_response = interest_responses[personality_type].format(interest=interest)
+            greeting += " " + interest_response
 
         return greeting
