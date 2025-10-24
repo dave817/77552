@@ -1,0 +1,4 @@
+Apikey name:202510220412 key:sk-KwTRyijO6ByCWjrjm3vf5bwgGktAKOYQ
+AccessKey ID：019A0A2BD9067A46B8DD59CBD56F2A9C    AccessKey Secret：019A0A2BD9067A3689A95F2111B79929
+Model name:SenseChat-Character-Pro
+
