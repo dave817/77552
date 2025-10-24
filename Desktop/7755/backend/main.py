@@ -593,6 +593,98 @@ async def update_character_endpoint(
         raise HTTPException(status_code=500, detail=f"更新角色失敗: {str(e)}")
 
 
+@app.post("/api/v2/create-knowledge-base/{character_id}")
+async def create_knowledge_base_for_character(
+    character_id: int,
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Create or update knowledge base for a character
+    This will enable memory enhancement for better conversations
+
+    Args:
+        character_id: Character ID
+        db: Database session
+
+    Returns:
+        Success status with knowledge base ID
+    """
+    try:
+        from backend.knowledge_base import KnowledgeBaseManager
+
+        # Get character
+        character = db.query(Character).filter(
+            Character.character_id == character_id
+        ).first()
+
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        # Get user preferences
+        user_prefs = db.query(UserPreference).filter(
+            UserPreference.user_id == character.user_id
+        ).all()
+
+        # Build preferences dict
+        preferences_dict = {}
+        for pref in user_prefs:
+            if pref.category not in preferences_dict:
+                preferences_dict[pref.category] = pref.content
+
+        # Create knowledge base manager
+        kb_manager = KnowledgeBaseManager(api_client)
+
+        # Create or update knowledge base
+        if character.knowledge_base_id:
+            # Update existing
+            success = kb_manager.update_character_knowledge(
+                knowledge_base_id=character.knowledge_base_id,
+                character_name=character.name,
+                user_preferences=preferences_dict,
+                background_info=character.detail_setting
+            )
+            if success:
+                message = "知識庫已更新"
+                kb_id = character.knowledge_base_id
+            else:
+                return {
+                    "success": False,
+                    "message": "知識庫更新失敗"
+                }
+        else:
+            # Create new
+            kb_id = kb_manager.create_character_knowledge(
+                character_name=character.name,
+                user_preferences=preferences_dict,
+                background_info=character.detail_setting
+            )
+
+            if kb_id:
+                # Save knowledge base ID to character
+                character.knowledge_base_id = kb_id
+                db.commit()
+                message = "知識庫已建立"
+            else:
+                return {
+                    "success": False,
+                    "message": "知識庫建立失敗"
+                }
+
+        return {
+            "success": True,
+            "message": message,
+            "knowledge_base_id": kb_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error creating knowledge base: {error_details}")
+        raise HTTPException(status_code=500, detail=f"知識庫操作失敗: {str(e)}")
+
+
 @app.get("/api/v2/export-conversation/{character_id}")
 async def export_conversation(
     character_id: int,

@@ -374,13 +374,19 @@ class ConversationManager:
             "primary_bot_name": character.name
         }
 
+        # Prepare knowledge base IDs if available
+        know_ids = []
+        if character.knowledge_base_id:
+            know_ids = [character.knowledge_base_id]
+
         # Call API
         try:
             response = self.api_client.create_character_chat(
                 character_settings=character_settings_list,
                 role_setting=role_setting,
                 messages=api_messages,
-                max_new_tokens=1024
+                max_new_tokens=1024,
+                know_ids=know_ids if know_ids else None
             )
 
             character_reply = response["data"]["reply"]

@@ -59,6 +59,7 @@ class Character(Base):
     nickname = Column(String(50))
     detail_setting = Column(Text)  # Up to 500 chars
     other_setting = Column(JSON)  # JSON stored as text
+    knowledge_base_id = Column(String(100))  # SenseChat knowledge base ID
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
