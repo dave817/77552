@@ -324,12 +324,54 @@ class ConversationManager:
             # Update favorability
             new_level, level_increased = self.update_favorability(character_id)
 
+            # Get updated favorability for accurate message count
+            updated_favorability = self.get_favorability(character_id)
+            current_message_count = updated_favorability.message_count if updated_favorability else 0
+
+            # Check for milestone achievements (50, 100, 200, 500 messages)
+            milestone_reached = False
+            milestone_number = 0
+            milestones = [50, 100, 200, 500, 1000]
+            for milestone in milestones:
+                if current_message_count == milestone:
+                    milestone_reached = True
+                    milestone_number = milestone
+                    break
+
+            # Check for conversation anniversary (days since first message)
+            anniversary_reached = False
+            anniversary_days = 0
+            first_message = self.db.query(Message).filter(
+                Message.character_id == character_id
+            ).order_by(Message.timestamp.asc()).first()
+
+            if first_message:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                first_date = first_message.timestamp
+                if first_date.tzinfo is None:
+                    from datetime import timezone
+                    first_date = first_date.replace(tzinfo=timezone.utc)
+                days_since_first = (now - first_date).days
+
+                # Check for anniversary milestones (7, 30, 100, 365 days)
+                anniversary_milestones = [7, 30, 100, 365]
+                for anniversary in anniversary_milestones:
+                    if days_since_first == anniversary:
+                        anniversary_reached = True
+                        anniversary_days = anniversary
+                        break
+
             return {
                 "success": True,
                 "reply": character_reply,
                 "favorability_level": new_level,
                 "level_increased": level_increased,
-                "message_count": favorability.message_count if favorability else 0,
+                "message_count": current_message_count,
+                "milestone_reached": milestone_reached,
+                "milestone_number": milestone_number,
+                "anniversary_reached": anniversary_reached,
+                "anniversary_days": anniversary_days,
                 "usage": response["data"].get("usage", {})
             }
 

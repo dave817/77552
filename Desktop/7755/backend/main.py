@@ -384,6 +384,112 @@ async def get_favorability_status(character_id: int, db: Session = Depends(get_d
         raise HTTPException(status_code=500, detail=f"獲取好感度失敗: {str(e)}")
 
 
+@app.get("/api/v2/character-profile/{character_id}")
+async def get_character_profile(character_id: int, db: Session = Depends(get_db)) -> Dict:
+    """
+    Get complete character profile with detailed statistics
+
+    Args:
+        character_id: Character ID
+        db: Database session
+
+    Returns:
+        Complete character profile including stats and favorability
+    """
+    try:
+        conv_manager = ConversationManager(db, api_client)
+
+        # Get character
+        character = conv_manager.get_character(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色未找到")
+
+        # Get favorability
+        favorability = conv_manager.get_favorability(character_id)
+
+        # Get conversation statistics
+        messages = conv_manager.get_conversation_history(character_id, limit=1000)
+
+        # Calculate statistics
+        total_messages = len(messages)
+        user_messages = sum(1 for msg in messages if msg.speaker_name != character.name)
+        character_messages = total_messages - user_messages
+
+        first_message_date = messages[-1].timestamp.isoformat() if messages else None
+        last_message_date = messages[0].timestamp.isoformat() if messages else None
+
+        # Calculate conversation days
+        conversation_days = 0
+        if messages and len(messages) > 1:
+            first_date = messages[-1].timestamp.date()
+            last_date = messages[0].timestamp.date()
+            conversation_days = (last_date - first_date).days + 1
+
+        # Favorability progress
+        if favorability:
+            if favorability.current_level == 1:
+                progress = min(100, (favorability.message_count / 20) * 100)
+                next_level_at = 20
+                level_name = "陌生期"
+            elif favorability.current_level == 2:
+                progress = min(100, ((favorability.message_count - 20) / 30) * 100)
+                next_level_at = 50
+                level_name = "熟悉期"
+            else:
+                progress = 100
+                next_level_at = None
+                level_name = "親密期"
+        else:
+            progress = 0
+            next_level_at = 20
+            level_name = "未知"
+
+        # Parse other_setting to get background story
+        import json
+        other_setting = {}
+        try:
+            other_setting = json.loads(character.other_setting) if isinstance(character.other_setting, str) else character.other_setting
+        except:
+            pass
+
+        return {
+            "success": True,
+            "character": {
+                "character_id": character.character_id,
+                "name": character.name,
+                "nickname": character.nickname,
+                "gender": character.gender,
+                "identity": character.identity,
+                "detail_setting": character.detail_setting,
+                "background_story": other_setting.get("background_story", ""),
+                "interests": other_setting.get("interests", []),
+                "communication_style": other_setting.get("communication_style", ""),
+                "created_at": character.created_at.isoformat()
+            },
+            "favorability": {
+                "current_level": favorability.current_level if favorability else 1,
+                "level_name": level_name,
+                "message_count": favorability.message_count if favorability else 0,
+                "progress_percentage": round(progress, 1),
+                "next_level_at": next_level_at
+            },
+            "statistics": {
+                "total_messages": total_messages,
+                "user_messages": user_messages,
+                "character_messages": character_messages,
+                "conversation_days": conversation_days,
+                "first_message_date": first_message_date,
+                "last_message_date": last_message_date,
+                "average_messages_per_day": round(total_messages / conversation_days, 1) if conversation_days > 0 else 0
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"獲取角色資料失敗: {str(e)}")
+
+
 @app.get("/ui2")
 async def ui2():
     """Phase 2 UI - User input and character generation with full persistence"""
@@ -526,6 +632,11 @@ async def ui2():
                 border: 2px solid #e0e0e0;
                 border-radius: 12px;
             }
+            #chatMessages {
+                max-height: 400px;
+                overflow-y: auto;
+                padding: 10px;
+            }
             .message {
                 padding: 10px;
                 margin: 10px 0;
@@ -538,11 +649,115 @@ async def ui2():
             .message.character {
                 background: #f3e5f5;
             }
+            .typing-indicator {
+                display: flex;
+                align-items: center;
+                padding: 10px;
+                margin: 10px 0;
+                background: #f3e5f5;
+                border-radius: 8px;
+                width: fit-content;
+            }
+            .typing-indicator span {
+                height: 8px;
+                width: 8px;
+                margin: 0 2px;
+                background-color: #9e9e9e;
+                display: inline-block;
+                border-radius: 50%;
+                animation: typing 1.4s infinite;
+            }
+            .typing-indicator span:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            .typing-indicator span:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+            @keyframes typing {
+                0%, 60%, 100% {
+                    transform: translateY(0);
+                    opacity: 0.7;
+                }
+                30% {
+                    transform: translateY(-10px);
+                    opacity: 1;
+                }
+            }
+            .level-up-notification {
+                padding: 15px;
+                margin: 15px 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 12px;
+                text-align: center;
+                font-weight: bold;
+                animation: slideIn 0.5s ease-out;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
+            @keyframes slideIn {
+                from {
+                    transform: translateY(-20px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+            .profile-button {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                transition: transform 0.2s, box-shadow 0.2s;
+                margin-right: 10px;
+            }
+            .profile-button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
             .loading {
                 text-align: center;
                 color: #667eea;
                 font-size: 18px;
                 padding: 20px;
+            }
+
+            /* Mobile Responsive Styles */
+            @media (max-width: 768px) {
+                .container {
+                    padding: 15px;
+                    margin: 10px auto;
+                }
+                h1 {
+                    font-size: 24px;
+                }
+                h2 {
+                    font-size: 20px;
+                }
+                .form-group input,
+                .form-group textarea,
+                .form-group select {
+                    font-size: 16px; /* Prevents zoom on iOS */
+                }
+                .button-group {
+                    flex-direction: column;
+                }
+                .button-group button,
+                .profile-button {
+                    width: 100%;
+                    margin: 5px 0;
+                }
+                #chatMessages {
+                    max-height: 300px;
+                }
+                .character-result {
+                    font-size: 14px;
+                }
             }
         </style>
     </head>
@@ -558,6 +773,24 @@ async def ui2():
                     <label>你的名字：</label>
                     <input type="text" id="userName" placeholder="請輸入你的名字">
                 </div>
+                <div class="form-group">
+                    <label>你是男生還是女生？</label>
+                    <select id="userGender">
+                        <option value="">請選擇</option>
+                        <option value="男">男生</option>
+                        <option value="女">女生</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>你喜歡男生還是女生？</label>
+                    <select id="userPreference">
+                        <option value="">請選擇</option>
+                        <option value="男">男生</option>
+                        <option value="女">女生</option>
+                        <option value="都可以">都可以</option>
+                    </select>
+                </div>
                 <div class="button-group">
                     <div></div>
                     <button onclick="nextStep(2)">下一步</button>
@@ -567,6 +800,11 @@ async def ui2():
             <!-- Step 2: Dream Type -->
             <div id="step2" class="step">
                 <h2>第二步：描述你的理想伴侶</h2>
+
+                <div class="form-group">
+                    <label>角色名字：</label>
+                    <input type="text" id="characterName" placeholder="例如：雨柔、思涵、嘉欣">
+                </div>
 
                 <div class="form-group">
                     <label>說話風格：</label>
@@ -674,6 +912,7 @@ async def ui2():
                 </div>
 
                 <div class="button-group" style="margin-top: 20px;">
+                    <button class="profile-button" onclick="viewProfile()">📊 查看角色檔案</button>
                     <button onclick="location.reload()">重新開始</button>
                 </div>
             </div>
@@ -689,9 +928,19 @@ async def ui2():
 
             function nextStep(step) {
                 // Validate current step
-                if (step === 2 && !document.getElementById('userName').value) {
-                    alert('請輸入你的名字');
-                    return;
+                if (step === 2) {
+                    if (!document.getElementById('userName').value) {
+                        alert('請輸入你的名字');
+                        return;
+                    }
+                    if (!document.getElementById('userGender').value) {
+                        alert('請選擇你的性別');
+                        return;
+                    }
+                    if (!document.getElementById('userPreference').value) {
+                        alert('請選擇你喜歡的性別');
+                        return;
+                    }
                 }
 
                 document.getElementById('step' + currentStep).classList.remove('active');
@@ -718,6 +967,9 @@ async def ui2():
 
             async function generateCharacter() {
                 const userName = document.getElementById('userName').value;
+                const userGender = document.getElementById('userGender').value;
+                const userPreference = document.getElementById('userPreference').value;
+                const characterName = document.getElementById('characterName').value;
                 const talkingStyle = document.getElementById('talkingStyle').value;
                 const traits = getSelectedTraits();
                 const interests = document.getElementById('interests').value.split('、').map(s => s.trim()).filter(s => s);
@@ -735,6 +987,9 @@ async def ui2():
 
                 const userProfile = {
                     user_name: userName,
+                    user_gender: userGender,
+                    user_preference: userPreference,
+                    preferred_character_name: characterName,
                     dream_type: {
                         personality_traits: traits,
                         physical_description: '',
@@ -834,12 +1089,13 @@ async def ui2():
                 displayMessage(userName, message, 'user');
                 input.value = '';
 
-                // Show loading indicator
+                // Show typing indicator
                 const loadingDiv = document.createElement('div');
                 loadingDiv.id = 'loading-indicator';
-                loadingDiv.className = 'message character';
-                loadingDiv.innerHTML = '<em>正在輸入...</em>';
+                loadingDiv.className = 'typing-indicator';
+                loadingDiv.innerHTML = '<span></span><span></span><span></span>';
                 document.getElementById('chatMessages').appendChild(loadingDiv);
+                document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
 
                 try {
                     const response = await fetch('/api/v2/send-message', {
@@ -865,15 +1121,48 @@ async def ui2():
                         favorabilityLevel = data.favorability_level;
                         messageCount = data.message_count;
 
-                        // Show level up notification
+                        // Show level up notification with animation
                         if (data.level_increased) {
                             const levelUpText = favorabilityLevel === 2 ? '你們的關係變得更熟悉了！ 💛' :
                                                favorabilityLevel === 3 ? '你們的關係變得親密了！ 💖' : '';
                             const notification = document.createElement('div');
-                            notification.className = 'message';
-                            notification.style = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; font-weight: bold;';
+                            notification.className = 'level-up-notification';
                             notification.innerHTML = `🎉 好感度提升！${levelUpText}`;
                             document.getElementById('chatMessages').appendChild(notification);
+                            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+                        }
+
+                        // Show milestone notification
+                        if (data.milestone_reached) {
+                            const milestoneTexts = {
+                                50: '我們已經聊了50條訊息了呢！好開心能和你聊這麼多 💕',
+                                100: '哇！100條訊息了！時間過得好快，和你聊天真的很愉快 ✨',
+                                200: '不知不覺已經200條訊息了！謝謝你一直陪著我 💖',
+                                500: '天啊！500條訊息了！我們的感情真的越來越深厚了 🌟',
+                                1000: '1000條訊息了！這是一個特別的里程碑，謝謝你一直在我身邊 💝'
+                            };
+                            const milestoneText = milestoneTexts[data.milestone_number] || `我們已經聊了${data.milestone_number}條訊息了！`;
+                            const notification = document.createElement('div');
+                            notification.className = 'level-up-notification';
+                            notification.innerHTML = `🎊 里程碑達成！${milestoneText}`;
+                            document.getElementById('chatMessages').appendChild(notification);
+                            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+                        }
+
+                        // Show anniversary notification
+                        if (data.anniversary_reached) {
+                            const anniversaryTexts = {
+                                7: '我們認識一週了！這一週和你聊天真的很開心 💝',
+                                30: '一個月的時光！謝謝你這段時間的陪伴，讓我的每一天都充滿期待 🌸',
+                                100: '100天了！這是我們相遇的第100天，感覺時間過得好快，希望能一直這樣陪伴你 🌹',
+                                365: '一整年了！謝謝你這一年來一直在我身邊，你對我來說真的很重要 💖✨'
+                            };
+                            const anniversaryText = anniversaryTexts[data.anniversary_days] || `我們已經認識${data.anniversary_days}天了！`;
+                            const notification = document.createElement('div');
+                            notification.className = 'level-up-notification';
+                            notification.innerHTML = `🎂 紀念日快樂！${anniversaryText}`;
+                            document.getElementById('chatMessages').appendChild(notification);
+                            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
                         }
 
                         // Update favorability display
@@ -901,6 +1190,14 @@ async def ui2():
                 // Re-render character with updated favorability
                 displayCharacter(generatedCharacter, '');
             }
+
+            function viewProfile() {
+                if (characterId) {
+                    window.location.href = `/profile?character_id=${characterId}`;
+                } else {
+                    alert('請先生成角色！');
+                }
+            }
         </script>
     </body>
     </html>
@@ -908,6 +1205,308 @@ async def ui2():
 
     return HTMLResponse(
         content=html_content,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@app.get("/profile")
+async def character_profile_page():
+    """Character Profile View - displays complete character information and statistics"""
+    return HTMLResponse(
+        content="""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>角色檔案 - 戀愛聊天機器人</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: "Microsoft YaHei", "微軟正黑體", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .profile-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .character-name {
+            font-size: 36px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .nickname {
+            font-size: 18px;
+            color: #666;
+            font-style: italic;
+        }
+        .section {
+            margin: 30px 0;
+        }
+        .section-title {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .favorability-container {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        .favorability-level {
+            text-align: center;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .level-1 { color: #9e9e9e; }
+        .level-2 { color: #ff9800; }
+        .level-3 { color: #e91e63; }
+        .progress-bar-container {
+            background: #ddd;
+            height: 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        .progress-bar.level-1 { background: linear-gradient(90deg, #9e9e9e, #bdbdbd); }
+        .progress-bar.level-2 { background: linear-gradient(90deg, #ff9800, #ffa726); }
+        .progress-bar.level-3 { background: linear-gradient(90deg, #e91e63, #ec407a); }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 8px;
+        }
+        .background-story {
+            background: #fff3e0;
+            padding: 20px;
+            border-radius: 12px;
+            line-height: 1.8;
+            color: #333;
+        }
+        .detail-row {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #667eea;
+            margin-right: 10px;
+        }
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border-radius: 8px;
+            text-decoration: none;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .loading {
+            text-align: center;
+            padding: 60px;
+            font-size: 20px;
+            color: #667eea;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="profile-card">
+            <div id="loading" class="loading">正在載入角色檔案...</div>
+            <div id="content" style="display: none;">
+                <div class="header">
+                    <div class="character-name" id="characterName"></div>
+                    <div class="nickname" id="nickname"></div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">💗 好感度</div>
+                    <div class="favorability-container">
+                        <div class="favorability-level" id="favorabilityLevel"></div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="progressBar"></div>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px; color: #666;" id="progressText"></div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">📊 對話統計</div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalMessages">0</div>
+                            <div class="stat-label">總訊息數</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="conversationDays">0</div>
+                            <div class="stat-label">對話天數</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="avgMessages">0</div>
+                            <div class="stat-label">平均每日訊息</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">✨ 角色資訊</div>
+                    <div class="detail-row">
+                        <span class="detail-label">身份：</span>
+                        <span id="identity"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">性格：</span>
+                        <span id="detailSetting"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">興趣：</span>
+                        <span id="interests"></span>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">📖 角色背景</div>
+                    <div class="background-story" id="backgroundStory"></div>
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <a href="/ui2" class="button">返回聊天</a>
+                </div>
+            </div>
+            <div id="error" class="error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        async function loadProfile() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const characterId = urlParams.get('character_id');
+
+            if (!characterId) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').textContent = '錯誤：未提供角色ID。請從聊天頁面訪問。';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/character-profile/${characterId}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || '載入失敗');
+                }
+
+                // Hide loading, show content
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+
+                // Fill in character info
+                document.getElementById('characterName').textContent = `${data.character.name}`;
+                document.getElementById('nickname').textContent = `（${data.character.nickname}）`;
+                document.getElementById('identity').textContent = data.character.identity;
+                document.getElementById('detailSetting').textContent = data.character.detail_setting;
+                document.getElementById('interests').textContent = data.character.interests.join('、') || '無';
+                document.getElementById('backgroundStory').textContent = data.character.background_story || '暫無背景故事';
+
+                // Favorability
+                const fav = data.favorability;
+                const favLevel = document.getElementById('favorabilityLevel');
+                favLevel.textContent = `${fav.level_name} (Level ${fav.current_level})`;
+                favLevel.className = `favorability-level level-${fav.current_level}`;
+
+                const progressBar = document.getElementById('progressBar');
+                progressBar.style.width = `${fav.progress_percentage}%`;
+                progressBar.className = `progress-bar level-${fav.current_level}`;
+                progressBar.textContent = `${fav.progress_percentage}%`;
+
+                const progressText = document.getElementById('progressText');
+                if (fav.next_level_at) {
+                    progressText.textContent = `已交流 ${fav.message_count} 則訊息，距離下一級還需 ${fav.next_level_at - fav.message_count} 則`;
+                } else {
+                    progressText.textContent = `已達到最高好感度！共 ${fav.message_count} 則訊息`;
+                }
+
+                // Statistics
+                document.getElementById('totalMessages').textContent = data.statistics.total_messages;
+                document.getElementById('conversationDays').textContent = data.statistics.conversation_days;
+                document.getElementById('avgMessages').textContent = data.statistics.average_messages_per_day;
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').textContent = `載入失敗：${error.message}`;
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        // Load profile on page load
+        loadProfile();
+    </script>
+</body>
+</html>
+        """,
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",

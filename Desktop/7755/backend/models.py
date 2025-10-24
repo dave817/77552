@@ -47,6 +47,9 @@ class CustomMemory(BaseModel):
 class UserProfile(BaseModel):
     """Complete user profile for character generation"""
     user_name: str = Field(..., description="用戶名稱")
+    user_gender: str = Field(..., description="用戶性別")
+    user_preference: str = Field(..., description="用戶喜歡的性別")
+    preferred_character_name: Optional[str] = Field(None, description="用戶指定的角色名字")
     dream_type: DreamType
     custom_memory: CustomMemory
 
