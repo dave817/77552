@@ -492,6 +492,143 @@ async def get_character_profile(character_id: int, db: Session = Depends(get_db)
         raise HTTPException(status_code=500, detail=f"獲取角色資料失敗: {str(e)}")
 
 
+@app.get("/api/v2/export-conversation/{character_id}")
+async def export_conversation(
+    character_id: int,
+    format: str = "txt",
+    db: Session = Depends(get_db)
+):
+    """
+    Export conversation history in JSON or TXT format
+
+    Args:
+        character_id: Character ID
+        format: Export format ('json' or 'txt')
+        db: Database session
+
+    Returns:
+        File download with conversation history
+    """
+    try:
+        from fastapi.responses import Response
+        import json
+        from datetime import datetime
+
+        conv_manager = ConversationManager(db, api_client)
+
+        # Get character
+        character = conv_manager.get_character(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色未找到")
+
+        # Get favorability
+        favorability = conv_manager.get_favorability(character_id)
+
+        # Get all conversation history
+        messages = conv_manager.get_conversation_history(character_id, limit=10000)
+
+        # Calculate statistics
+        total_messages = len(messages)
+        conversation_days = 0
+        if messages and len(messages) > 1:
+            first_date = messages[-1].timestamp.date()
+            last_date = messages[0].timestamp.date()
+            conversation_days = (last_date - first_date).days + 1
+
+        # Parse other_setting for background story
+        other_setting = {}
+        try:
+            other_setting = json.loads(character.other_setting) if isinstance(character.other_setting, str) else character.other_setting
+        except:
+            pass
+
+        if format.lower() == "json":
+            # Export as JSON
+            export_data = {
+                "export_info": {
+                    "export_date": datetime.now().isoformat(),
+                    "character_id": character_id,
+                    "total_messages": total_messages,
+                    "conversation_days": conversation_days
+                },
+                "character": {
+                    "name": character.name,
+                    "nickname": character.nickname,
+                    "gender": character.gender,
+                    "identity": character.identity,
+                    "personality": character.detail_setting,
+                    "background_story": other_setting.get("background_story", ""),
+                    "interests": other_setting.get("interests", [])
+                },
+                "favorability": {
+                    "level": favorability.current_level if favorability else 1,
+                    "level_name": "陌生期" if not favorability or favorability.current_level == 1 else ("熟悉期" if favorability.current_level == 2 else "親密期"),
+                    "message_count": favorability.message_count if favorability else 0
+                },
+                "messages": [
+                    {
+                        "timestamp": msg.timestamp.isoformat(),
+                        "speaker": msg.speaker_name,
+                        "content": msg.message_content,
+                        "favorability_level": msg.favorability_level
+                    }
+                    for msg in reversed(messages)  # Reverse to chronological order
+                ]
+            }
+
+            content = json.dumps(export_data, ensure_ascii=False, indent=2)
+            filename = f"{character.name}_對話記錄_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            media_type = "application/json"
+
+        else:  # TXT format
+            lines = []
+            lines.append("=" * 60)
+            lines.append(f"💕 {character.name} 的對話記錄")
+            lines.append("=" * 60)
+            lines.append(f"\n📊 統計資訊：")
+            lines.append(f"   總訊息數：{total_messages} 條")
+            lines.append(f"   對話天數：{conversation_days} 天")
+            lines.append(f"   好感度等級：{favorability.current_level if favorability else 1} - {'陌生期' if not favorability or favorability.current_level == 1 else ('熟悉期' if favorability.current_level == 2 else '親密期')}")
+            lines.append(f"\n✨ 角色資訊：")
+            lines.append(f"   名字：{character.name} ({character.nickname})")
+            lines.append(f"   性別：{character.gender}")
+            lines.append(f"   身份：{character.identity}")
+            lines.append(f"   性格：{character.detail_setting}")
+            if other_setting.get("background_story"):
+                lines.append(f"   背景故事：{other_setting['background_story']}")
+
+            lines.append(f"\n" + "=" * 60)
+            lines.append("💬 對話內容")
+            lines.append("=" * 60 + "\n")
+
+            for msg in reversed(messages):  # Chronological order
+                timestamp = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"[{timestamp}] {msg.speaker_name}：")
+                lines.append(f"  {msg.message_content}\n")
+
+            lines.append("=" * 60)
+            lines.append(f"匯出時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            lines.append("🤖 Generated with Claude Code")
+            lines.append("=" * 60)
+
+            content = "\n".join(lines)
+            filename = f"{character.name}_對話記錄_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            media_type = "text/plain; charset=utf-8"
+
+        return Response(
+            content=content.encode('utf-8'),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"匯出失敗: {str(e)}")
+
+
 @app.get("/ui2")
 async def ui2():
     """Phase 2 UI - User input and character generation with full persistence"""
@@ -1438,6 +1575,16 @@ async def character_profile_page():
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
+        .export-button {
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+        }
+        .export-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
         .loading {
             text-align: center;
             padding: 60px;
@@ -1514,6 +1661,8 @@ async def character_profile_page():
                 </div>
 
                 <div style="text-align: center; margin-top: 30px;">
+                    <button class="button export-button" onclick="exportConversation('txt')" style="margin-right: 10px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">📥 匯出為TXT</button>
+                    <button class="button export-button" onclick="exportConversation('json')" style="margin-right: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📥 匯出為JSON</button>
                     <a href="/ui2" class="button">返回聊天</a>
                 </div>
             </div>
@@ -1581,6 +1730,20 @@ async def character_profile_page():
                 document.getElementById('error').textContent = `載入失敗：${error.message}`;
                 document.getElementById('error').style.display = 'block';
             }
+        }
+
+        function exportConversation(format) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const characterId = urlParams.get('character_id');
+
+            if (!characterId) {
+                alert('找不到角色ID');
+                return;
+            }
+
+            // Create download link
+            const exportUrl = `/api/v2/export-conversation/${characterId}?format=${format}`;
+            window.location.href = exportUrl;
         }
 
         // Load profile on page load
