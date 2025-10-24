@@ -522,6 +522,77 @@ async def delete_character_endpoint(character_id: int, db: Session = Depends(get
         raise HTTPException(status_code=500, detail=f"刪除角色失敗: {str(e)}")
 
 
+@app.put("/api/v2/update-character/{character_id}")
+async def update_character_endpoint(
+    character_id: int,
+    character_data: Dict,
+    db: Session = Depends(get_db)
+) -> Dict:
+    """
+    Update character settings
+
+    Args:
+        character_id: Character ID to update
+        character_data: Updated character data
+        db: Database session
+
+    Returns:
+        Success status with updated character
+    """
+    try:
+        # Get character from database
+        character = db.query(Character).filter(
+            Character.character_id == character_id
+        ).first()
+
+        if not character:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+        # Update allowed fields
+        if "name" in character_data:
+            character.name = character_data["name"]
+        if "gender" in character_data:
+            character.gender = character_data["gender"]
+        if "identity" in character_data:
+            character.identity = character_data["identity"]
+        if "nickname" in character_data:
+            character.nickname = character_data["nickname"]
+        if "detail_setting" in character_data:
+            character.detail_setting = character_data["detail_setting"]
+        if "other_setting" in character_data:
+            # Parse JSON string if provided as string
+            if isinstance(character_data["other_setting"], str):
+                import json
+                character.other_setting = json.loads(character_data["other_setting"])
+            else:
+                character.other_setting = character_data["other_setting"]
+
+        db.commit()
+        db.refresh(character)
+
+        return {
+            "success": True,
+            "message": "角色設定已更新",
+            "character": {
+                "character_id": character.character_id,
+                "name": character.name,
+                "gender": character.gender,
+                "identity": character.identity,
+                "nickname": character.nickname,
+                "detail_setting": character.detail_setting,
+                "other_setting": character.other_setting
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error updating character: {error_details}")
+        raise HTTPException(status_code=500, detail=f"更新角色失敗: {str(e)}")
+
+
 @app.get("/api/v2/export-conversation/{character_id}")
 async def export_conversation(
     character_id: int,
@@ -2316,6 +2387,9 @@ async def character_management():
                             <button class="button button-secondary" onclick="event.stopPropagation(); viewProfile(${char.character_id})">
                                 📋 查看檔案
                             </button>
+                            <button class="button button-secondary" onclick="event.stopPropagation(); editCharacter(${char.character_id})">
+                                ✏️ 編輯
+                            </button>
                             <button class="button button-danger" onclick="event.stopPropagation(); deleteCharacter(${char.character_id}, '${char.name}')">
                                 🗑️
                             </button>
@@ -2347,6 +2421,10 @@ async def character_management():
 
         function viewProfile(characterId) {
             window.location.href = `/profile?character_id=${characterId}`;
+        }
+
+        function editCharacter(characterId) {
+            window.location.href = `/edit-character/${characterId}`;
         }
 
         async function deleteCharacter(characterId, characterName) {
@@ -2399,6 +2477,356 @@ async def character_management():
             "Pragma": "no-cache",
             "Expires": "0"
         }
+    )
+
+
+@app.get("/edit-character/{character_id}")
+async def edit_character_page(character_id: int):
+    """Character Editing Page - customize character settings"""
+    return HTMLResponse(
+        content=f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>編輯角色 - 戀愛聊天機器人</title>
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        body {{
+            font-family: "Microsoft YaHei", "微軟正黑體", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }}
+        .container {{
+            max-width: 800px;
+            margin: 0 auto;
+        }}
+        .header-card {{
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+            text-align: center;
+        }}
+        .page-title {{
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }}
+        .page-subtitle {{
+            color: #666;
+            font-size: 16px;
+        }}
+        .edit-card {{
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }}
+        .form-group {{
+            margin-bottom: 25px;
+        }}
+        .form-label {{
+            display: block;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }}
+        .form-input {{
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }}
+        .form-input:focus {{
+            outline: none;
+            border-color: #667eea;
+        }}
+        .form-textarea {{
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 15px;
+            min-height: 120px;
+            font-family: "Microsoft YaHei", "微軟正黑體", sans-serif;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }}
+        .form-textarea:focus {{
+            outline: none;
+            border-color: #667eea;
+        }}
+        .char-count {{
+            text-align: right;
+            color: #999;
+            font-size: 13px;
+            margin-top: 5px;
+        }}
+        .char-count.warning {{
+            color: #ff9800;
+        }}
+        .char-count.error {{
+            color: #f44336;
+        }}
+        .button-group {{
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }}
+        .btn {{
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }}
+        .btn-primary {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }}
+        .btn-primary:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }}
+        .btn-secondary {{
+            background: #f0f0f0;
+            color: #666;
+        }}
+        .btn-secondary:hover {{
+            background: #e0e0e0;
+        }}
+        .loading {{
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }}
+        .loading.active {{
+            display: block;
+        }}
+        .hint-text {{
+            color: #999;
+            font-size: 13px;
+            margin-top: 5px;
+        }}
+        .select-input {{
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 15px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }}
+        .select-input:focus {{
+            outline: none;
+            border-color: #667eea;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-card">
+            <div class="page-title">✏️ 編輯角色</div>
+            <div class="page-subtitle">自訂角色設定，打造你的專屬伴侶</div>
+        </div>
+
+        <div class="edit-card">
+            <form id="editForm" onsubmit="event.preventDefault(); saveCharacter();">
+                <div class="form-group">
+                    <label class="form-label">角色名字 *</label>
+                    <input type="text" id="name" class="form-input" maxlength="50" required>
+                    <div class="char-count" id="nameCount">0 / 50</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">性別 *</label>
+                    <select id="gender" class="select-input" required>
+                        <option value="女">女</option>
+                        <option value="男">男</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">暱稱</label>
+                    <input type="text" id="nickname" class="form-input" maxlength="50">
+                    <div class="char-count" id="nicknameCount">0 / 50</div>
+                    <div class="hint-text">例如：小雨雨、寶貝</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">身份背景</label>
+                    <input type="text" id="identity" class="form-input" maxlength="200">
+                    <div class="char-count" id="identityCount">0 / 200</div>
+                    <div class="hint-text">例如：23歲大學生、25歲上班族</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">詳細設定 *</label>
+                    <textarea id="detail_setting" class="form-textarea" maxlength="500" required></textarea>
+                    <div class="char-count" id="detailCount">0 / 500</div>
+                    <div class="hint-text">描述角色的性格特質、說話風格、行為模式等</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">興趣愛好</label>
+                    <input type="text" id="interests" class="form-input">
+                    <div class="hint-text">用逗號分隔，例如：音樂，閱讀，旅遊</div>
+                </div>
+
+                <div class="loading" id="loading">
+                    <div>⏳ 正在保存...</div>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" onclick="goBack()">取消</button>
+                    <button type="submit" class="btn btn-primary">💾 保存變更</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const characterId = {character_id};
+
+        // Character count tracking
+        const fields = [
+            {{ id: 'name', max: 50 }},
+            {{ id: 'nickname', max: 50 }},
+            {{ id: 'identity', max: 200 }},
+            {{ id: 'detail_setting', max: 500 }}
+        ];
+
+        fields.forEach(field => {{
+            const input = document.getElementById(field.id);
+            const counter = document.getElementById(field.id + 'Count');
+
+            input.addEventListener('input', () => {{
+                const length = input.value.length;
+                counter.textContent = `${{length}} / ${{field.max}}`;
+
+                if (length >= field.max * 0.9) {{
+                    counter.classList.add('warning');
+                }} else {{
+                    counter.classList.remove('warning');
+                }}
+
+                if (length >= field.max) {{
+                    counter.classList.add('error');
+                }} else {{
+                    counter.classList.remove('error');
+                }}
+            }});
+        }});
+
+        async function loadCharacter() {{
+            try {{
+                const response = await fetch(`/api/v2/character-profile/${{characterId}}`);
+                const data = await response.json();
+
+                if (data.success) {{
+                    const char = data.character;
+                    document.getElementById('name').value = char.name || '';
+                    document.getElementById('gender').value = char.gender || '女';
+                    document.getElementById('nickname').value = char.nickname || '';
+                    document.getElementById('identity').value = char.identity || '';
+                    document.getElementById('detail_setting').value = char.detail_setting || '';
+
+                    // Load interests from other_setting
+                    if (char.other_setting && char.other_setting.interests) {{
+                        document.getElementById('interests').value = char.other_setting.interests.join('，');
+                    }}
+
+                    // Trigger character count updates
+                    fields.forEach(field => {{
+                        const input = document.getElementById(field.id);
+                        input.dispatchEvent(new Event('input'));
+                    }});
+                }} else {{
+                    alert('載入角色資料失敗');
+                    goBack();
+                }}
+            }} catch (error) {{
+                console.error('Error loading character:', error);
+                alert('載入角色資料時發生錯誤');
+                goBack();
+            }}
+        }}
+
+        async function saveCharacter() {{
+            const loading = document.getElementById('loading');
+            loading.classList.add('active');
+
+            try {{
+                // Parse interests
+                const interestsText = document.getElementById('interests').value.trim();
+                const interests = interestsText ? interestsText.split(/[，,]/).map(s => s.trim()).filter(s => s) : [];
+
+                const characterData = {{
+                    name: document.getElementById('name').value.trim(),
+                    gender: document.getElementById('gender').value,
+                    nickname: document.getElementById('nickname').value.trim(),
+                    identity: document.getElementById('identity').value.trim(),
+                    detail_setting: document.getElementById('detail_setting').value.trim(),
+                    other_setting: {{
+                        interests: interests
+                    }}
+                }};
+
+                const response = await fetch(`/api/v2/update-character/${{characterId}}`, {{
+                    method: 'PUT',
+                    headers: {{
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(characterData)
+                }});
+
+                const data = await response.json();
+
+                if (data.success) {{
+                    alert('✅ 角色設定已更新！');
+                    window.location.href = '/characters';
+                }} else {{
+                    alert('保存失敗：' + (data.error || '未知錯誤'));
+                }}
+            }} catch (error) {{
+                console.error('Error saving character:', error);
+                alert('保存時發生錯誤');
+            }} finally {{
+                loading.classList.remove('active');
+            }}
+        }}
+
+        function goBack() {{
+            window.location.href = '/characters';
+        }}
+
+        // Load character data on page load
+        loadCharacter();
+    </script>
+</body>
+</html>
+        """,
+        headers={{
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }}
     )
 
 
