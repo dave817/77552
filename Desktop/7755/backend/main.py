@@ -629,6 +629,166 @@ async def export_conversation(
         raise HTTPException(status_code=500, detail=f"匯出失敗: {str(e)}")
 
 
+@app.get("/api/v2/analytics/{character_id}")
+async def get_analytics(
+    character_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get analytics and statistics for a character's conversations
+
+    Args:
+        character_id: Character ID
+        db: Database session
+
+    Returns:
+        Analytics data including message trends, favorability progression, etc.
+    """
+    try:
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+        import json
+
+        conv_manager = ConversationManager(db, api_client)
+
+        # Get character
+        character = conv_manager.get_character(character_id)
+        if not character:
+            raise HTTPException(status_code=404, detail="角色未找到")
+
+        # Get favorability
+        favorability = conv_manager.get_favorability(character_id)
+
+        # Get all messages
+        messages = conv_manager.get_conversation_history(character_id, limit=10000)
+
+        if not messages:
+            return {
+                "success": True,
+                "character_id": character_id,
+                "total_messages": 0,
+                "analytics": {}
+            }
+
+        # Calculate basic statistics
+        total_messages = len(messages)
+        user_messages = sum(1 for msg in messages if msg.speaker_name != character.name)
+        character_messages = total_messages - user_messages
+
+        # Time-based statistics
+        first_message_time = messages[-1].timestamp
+        last_message_time = messages[0].timestamp
+        conversation_days = (last_message_time.date() - first_message_time.date()).days + 1
+
+        # Messages by day
+        messages_by_day = defaultdict(int)
+        for msg in messages:
+            date_key = msg.timestamp.date().isoformat()
+            messages_by_day[date_key] += 1
+
+        # Messages by hour of day
+        messages_by_hour = defaultdict(int)
+        for msg in messages:
+            hour = msg.timestamp.hour
+            messages_by_hour[hour] += 1
+
+        # Favorability progression
+        favorability_progression = []
+        current_level = 1
+        for i, msg in enumerate(reversed(messages), 1):
+            # Simulate favorability level progression based on message count
+            if i >= 50:
+                level = 3
+            elif i >= 20:
+                level = 2
+            else:
+                level = 1
+
+            if level != current_level:
+                favorability_progression.append({
+                    "message_count": i,
+                    "level": level,
+                    "timestamp": msg.timestamp.isoformat(),
+                    "level_name": "陌生期" if level == 1 else ("熟悉期" if level == 2 else "親密期")
+                })
+                current_level = level
+
+        # Daily message trends (last 30 days)
+        today = datetime.now().date()
+        daily_trends = []
+        for i in range(29, -1, -1):
+            date = today - timedelta(days=i)
+            date_key = date.isoformat()
+            count = messages_by_day.get(date_key, 0)
+            daily_trends.append({
+                "date": date_key,
+                "message_count": count
+            })
+
+        # Most active hours
+        top_hours = sorted(messages_by_hour.items(), key=lambda x: x[1], reverse=True)[:5]
+        most_active_hours = [
+            {
+                "hour": hour,
+                "message_count": count,
+                "time_range": f"{hour}:00-{hour+1}:00"
+            }
+            for hour, count in top_hours
+        ]
+
+        # Average response time (simplified - just average messages per day)
+        avg_messages_per_day = total_messages / conversation_days if conversation_days > 0 else 0
+
+        # Longest streak (consecutive days with messages)
+        dates_with_messages = sorted(set(msg.timestamp.date() for msg in messages))
+        longest_streak = 1
+        current_streak = 1
+        for i in range(1, len(dates_with_messages)):
+            if (dates_with_messages[i] - dates_with_messages[i-1]).days == 1:
+                current_streak += 1
+                longest_streak = max(longest_streak, current_streak)
+            else:
+                current_streak = 1
+
+        return {
+            "success": True,
+            "character_id": character_id,
+            "character_name": character.name,
+            "total_messages": total_messages,
+            "analytics": {
+                "overview": {
+                    "total_messages": total_messages,
+                    "user_messages": user_messages,
+                    "character_messages": character_messages,
+                    "conversation_days": conversation_days,
+                    "first_message": first_message_time.isoformat(),
+                    "last_message": last_message_time.isoformat(),
+                    "avg_messages_per_day": round(avg_messages_per_day, 1),
+                    "longest_streak_days": longest_streak
+                },
+                "favorability": {
+                    "current_level": favorability.current_level if favorability else 1,
+                    "current_level_name": "陌生期" if not favorability or favorability.current_level == 1 else ("熟悉期" if favorability.current_level == 2 else "親密期"),
+                    "message_count": favorability.message_count if favorability else 0,
+                    "progression": favorability_progression
+                },
+                "trends": {
+                    "daily": daily_trends,
+                    "most_active_hours": most_active_hours,
+                    "messages_by_hour": [
+                        {"hour": h, "count": messages_by_hour.get(h, 0)}
+                        for h in range(24)
+                    ]
+                }
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"獲取分析數據失敗: {str(e)}")
+
+
 @app.get("/ui2")
 async def ui2():
     """Phase 2 UI - User input and character generation with full persistence"""
@@ -1661,6 +1821,7 @@ async def character_profile_page():
                 </div>
 
                 <div style="text-align: center; margin-top: 30px;">
+                    <button class="button" onclick="viewAnalytics()" style="margin-right: 10px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">📊 數據分析</button>
                     <button class="button export-button" onclick="exportConversation('txt')" style="margin-right: 10px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">📥 匯出為TXT</button>
                     <button class="button export-button" onclick="exportConversation('json')" style="margin-right: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📥 匯出為JSON</button>
                     <a href="/ui2" class="button">返回聊天</a>
@@ -1746,8 +1907,498 @@ async def character_profile_page():
             window.location.href = exportUrl;
         }
 
+        function viewAnalytics() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const characterId = urlParams.get('character_id');
+
+            if (!characterId) {
+                alert('找不到角色ID');
+                return;
+            }
+
+            window.location.href = `/analytics?character_id=${characterId}`;
+        }
+
         // Load profile on page load
         loadProfile();
+    </script>
+</body>
+</html>
+        """,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@app.get("/analytics")
+async def analytics_dashboard():
+    """Analytics Dashboard - displays comprehensive conversation analytics"""
+    return HTMLResponse(
+        content="""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>數據分析 - 戀愛聊天機器人</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: "Microsoft YaHei", "微軟正黑體", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .dashboard-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .dashboard-title {
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .character-name {
+            font-size: 20px;
+            color: #666;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+        .stat-card.green {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        .stat-card.orange {
+            background: linear-gradient(135deg, #ff9800 0%, #ffa726 100%);
+        }
+        .stat-card.pink {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .chart-title {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .section {
+            margin: 30px 0;
+        }
+        .favorability-progression {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .progression-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .progression-level {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+        .progression-details {
+            flex: 1;
+        }
+        .progression-date {
+            color: #666;
+            font-size: 14px;
+        }
+        .button-group {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            margin: 5px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-size: 16px;
+            transition: transform 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+        }
+        .hours-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .hour-card {
+            text-align: center;
+            padding: 15px 10px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .hour-card.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transform: scale(1.1);
+        }
+        .hour-label {
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        .hour-count {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="dashboard-card">
+            <div class="header">
+                <div class="dashboard-title">📊 數據分析</div>
+                <div class="character-name" id="characterName">載入中...</div>
+            </div>
+
+            <div id="loading" style="text-align: center; padding: 40px;">
+                <div style="font-size: 24px; color: #667eea;">載入數據中...</div>
+            </div>
+
+            <div id="content" style="display: none;">
+                <!-- Overview Statistics -->
+                <div class="stats-grid" id="statsGrid"></div>
+
+                <!-- Daily Trend Chart -->
+                <div class="chart-container">
+                    <div class="chart-title">📈 每日訊息趨勢 (最近30天)</div>
+                    <canvas id="dailyTrendChart"></canvas>
+                </div>
+
+                <!-- Hourly Activity Chart -->
+                <div class="chart-container">
+                    <div class="chart-title">⏰ 時段活躍度</div>
+                    <canvas id="hourlyActivityChart"></canvas>
+                </div>
+
+                <!-- Most Active Hours -->
+                <div class="section">
+                    <div class="chart-container">
+                        <div class="chart-title">🔥 最活躍的時段</div>
+                        <div class="hours-grid" id="activeHoursGrid"></div>
+                    </div>
+                </div>
+
+                <!-- Favorability Progression -->
+                <div class="section">
+                    <div class="chart-container">
+                        <div class="chart-title">💕 好感度進度</div>
+                        <div class="favorability-progression" id="favorabilityProgression"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+
+            <div class="button-group">
+                <button class="button" onclick="goBack()">返回檔案</button>
+                <a href="/ui2" class="button">返回聊天</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let dailyChart = null;
+        let hourlyChart = null;
+
+        async function loadAnalytics() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const characterId = urlParams.get('character_id');
+
+            if (!characterId) {
+                showError('找不到角色ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/analytics/${characterId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayAnalytics(data);
+                } else {
+                    showError(data.error || '載入數據失敗');
+                }
+            } catch (error) {
+                showError('載入數據失敗: ' + error.message);
+            }
+        }
+
+        function displayAnalytics(data) {
+            // Hide loading, show content
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+
+            // Set character name
+            document.getElementById('characterName').textContent = data.character_name;
+
+            // Display overview statistics
+            displayOverviewStats(data.analytics.overview);
+
+            // Display charts
+            displayDailyTrendChart(data.analytics.trends.daily);
+            displayHourlyActivityChart(data.analytics.trends.messages_by_hour);
+
+            // Display most active hours
+            displayActiveHours(data.analytics.trends.most_active_hours);
+
+            // Display favorability progression
+            displayFavorabilityProgression(data.analytics.favorability);
+        }
+
+        function displayOverviewStats(overview) {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">總訊息數</div>
+                    <div class="stat-value">${overview.total_messages}</div>
+                </div>
+                <div class="stat-card green">
+                    <div class="stat-label">對話天數</div>
+                    <div class="stat-value">${overview.conversation_days}</div>
+                </div>
+                <div class="stat-card orange">
+                    <div class="stat-label">每日平均</div>
+                    <div class="stat-value">${overview.avg_messages_per_day}</div>
+                </div>
+                <div class="stat-card pink">
+                    <div class="stat-label">最長連續天數</div>
+                    <div class="stat-value">${overview.longest_streak_days}</div>
+                </div>
+            `;
+        }
+
+        function displayDailyTrendChart(dailyData) {
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+
+            if (dailyChart) {
+                dailyChart.destroy();
+            }
+
+            const dates = dailyData.map(d => d.date);
+            const counts = dailyData.map(d => d.count);
+
+            dailyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '訊息數',
+                        data: counts,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayHourlyActivityChart(hourlyData) {
+            const ctx = document.getElementById('hourlyActivityChart').getContext('2d');
+
+            if (hourlyChart) {
+                hourlyChart.destroy();
+            }
+
+            const hours = hourlyData.map(h => `${h.hour}:00`);
+            const counts = hourlyData.map(h => h.count);
+
+            hourlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: hours,
+                    datasets: [{
+                        label: '訊息數',
+                        data: counts,
+                        backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                        borderColor: '#667eea',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    aspectRatio: 2.5,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displayActiveHours(activeHours) {
+            const grid = document.getElementById('activeHoursGrid');
+
+            if (activeHours.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; color: #666;">暫無數據</div>';
+                return;
+            }
+
+            grid.innerHTML = activeHours.map(item => `
+                <div class="hour-card active">
+                    <div class="hour-label">${item.hour}:00</div>
+                    <div class="hour-count">${item.count}</div>
+                </div>
+            `).join('');
+        }
+
+        function displayFavorabilityProgression(favorability) {
+            const container = document.getElementById('favorabilityProgression');
+
+            const levelEmojis = {
+                1: '🌱',
+                2: '🌸',
+                3: '💕'
+            };
+
+            const levelNames = {
+                1: '陌生期',
+                2: '熟悉期',
+                3: '親密期'
+            };
+
+            let html = `
+                <div class="progression-item">
+                    <div class="progression-level">${levelEmojis[favorability.current_level]}</div>
+                    <div class="progression-details">
+                        <div style="font-size: 18px; font-weight: bold; color: #667eea;">
+                            目前等級: ${levelNames[favorability.current_level]}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (favorability.progression && favorability.progression.length > 0) {
+                html += '<div style="margin: 20px 0; color: #666; font-size: 16px;">歷史進度：</div>';
+                favorability.progression.forEach(prog => {
+                    html += `
+                        <div class="progression-item">
+                            <div class="progression-level">${levelEmojis[prog.level]}</div>
+                            <div class="progression-details">
+                                <div style="font-weight: bold;">${levelNames[prog.level]}</div>
+                                <div class="progression-date">第 ${prog.message_count} 條訊息時達成</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            container.innerHTML = html;
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').textContent = message;
+            document.getElementById('error').style.display = 'block';
+        }
+
+        function goBack() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const characterId = urlParams.get('character_id');
+            if (characterId) {
+                window.location.href = `/profile?character_id=${characterId}`;
+            } else {
+                window.history.back();
+            }
+        }
+
+        // Load analytics on page load
+        loadAnalytics();
     </script>
 </body>
 </html>
