@@ -982,7 +982,8 @@ async def ui2():
                     opacity: 1;
                 }
             }
-            .level-up-notification {
+            .level-up-notification,
+            .special-event-notification {
                 padding: 15px;
                 margin: 15px 0;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -990,8 +991,20 @@ async def ui2():
                 border-radius: 12px;
                 text-align: center;
                 font-weight: bold;
-                animation: slideIn 0.5s ease-out;
+                animation: slideIn 0.5s ease-out, glow 1.5s ease-in-out;
                 box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
+            .special-event-notification.milestone {
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                box-shadow: 0 4px 15px rgba(240, 147, 251, 0.4);
+            }
+            .special-event-notification.anniversary {
+                background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+                box-shadow: 0 4px 15px rgba(250, 112, 154, 0.4);
+            }
+            .special-event-notification.level-up {
+                background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                box-shadow: 0 4px 15px rgba(17, 153, 142, 0.4);
             }
             @keyframes slideIn {
                 from {
@@ -1001,6 +1014,14 @@ async def ui2():
                 to {
                     transform: translateY(0);
                     opacity: 1;
+                }
+            }
+            @keyframes glow {
+                0%, 100% {
+                    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+                }
+                50% {
+                    box-shadow: 0 4px 25px rgba(102, 126, 234, 0.8), 0 0 30px rgba(255, 255, 255, 0.5);
                 }
             }
             .profile-button {
@@ -1500,47 +1521,28 @@ async def ui2():
                         favorabilityLevel = data.favorability_level;
                         messageCount = data.message_count;
 
-                        // Show level up notification with animation
-                        if (data.level_increased) {
-                            const levelUpText = favorabilityLevel === 2 ? '你們的關係變得更熟悉了！ 💛' :
-                                               favorabilityLevel === 3 ? '你們的關係變得親密了！ 💖' : '';
-                            const notification = document.createElement('div');
-                            notification.className = 'level-up-notification';
-                            notification.innerHTML = `🎉 好感度提升！${levelUpText}`;
-                            document.getElementById('chatMessages').appendChild(notification);
-                            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-                        }
+                        // Show special event messages
+                        if (data.special_messages && data.special_messages.length > 0) {
+                            data.special_messages.forEach(event => {
+                                const notification = document.createElement('div');
+                                notification.className = 'special-event-notification';
 
-                        // Show milestone notification
-                        if (data.milestone_reached) {
-                            const milestoneTexts = {
-                                50: '我們已經聊了50條訊息了呢！好開心能和你聊這麼多 💕',
-                                100: '哇！100條訊息了！時間過得好快，和你聊天真的很愉快 ✨',
-                                200: '不知不覺已經200條訊息了！謝謝你一直陪著我 💖',
-                                500: '天啊！500條訊息了！我們的感情真的越來越深厚了 🌟',
-                                1000: '1000條訊息了！這是一個特別的里程碑，謝謝你一直在我身邊 💝'
-                            };
-                            const milestoneText = milestoneTexts[data.milestone_number] || `我們已經聊了${data.milestone_number}條訊息了！`;
-                            const notification = document.createElement('div');
-                            notification.className = 'level-up-notification';
-                            notification.innerHTML = `🎊 里程碑達成！${milestoneText}`;
-                            document.getElementById('chatMessages').appendChild(notification);
-                            document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-                        }
+                                let icon = '';
+                                if (event.type === 'milestone') {
+                                    icon = '🎊';
+                                    notification.classList.add('milestone');
+                                } else if (event.type === 'anniversary') {
+                                    icon = '🎂';
+                                    notification.classList.add('anniversary');
+                                } else if (event.type === 'level_up') {
+                                    icon = '🎉';
+                                    notification.classList.add('level-up');
+                                }
 
-                        // Show anniversary notification
-                        if (data.anniversary_reached) {
-                            const anniversaryTexts = {
-                                7: '我們認識一週了！這一週和你聊天真的很開心 💝',
-                                30: '一個月的時光！謝謝你這段時間的陪伴，讓我的每一天都充滿期待 🌸',
-                                100: '100天了！這是我們相遇的第100天，感覺時間過得好快，希望能一直這樣陪伴你 🌹',
-                                365: '一整年了！謝謝你這一年來一直在我身邊，你對我來說真的很重要 💖✨'
-                            };
-                            const anniversaryText = anniversaryTexts[data.anniversary_days] || `我們已經認識${data.anniversary_days}天了！`;
-                            const notification = document.createElement('div');
-                            notification.className = 'level-up-notification';
-                            notification.innerHTML = `🎂 紀念日快樂！${anniversaryText}`;
-                            document.getElementById('chatMessages').appendChild(notification);
+                                notification.innerHTML = `${icon} ${event.message}`;
+                                document.getElementById('chatMessages').appendChild(notification);
+                            });
+
                             document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
                         }
 

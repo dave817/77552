@@ -222,6 +222,76 @@ class ConversationManager:
             for msg in messages
         ]
 
+    def detect_time_based_context(self) -> Dict:
+        """
+        Detect current time context for time-based greetings
+
+        Returns:
+            Dictionary with time context information
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+
+        # Convert to local time (assuming UTC+8 for Traditional Chinese users)
+        local_hour = (now.hour + 8) % 24
+
+        time_context = {
+            "is_morning": 5 <= local_hour < 12,
+            "is_afternoon": 12 <= local_hour < 18,
+            "is_evening": 18 <= local_hour < 22,
+            "is_night": local_hour >= 22 or local_hour < 5,
+            "hour": local_hour,
+            "is_weekend": now.weekday() >= 5
+        }
+
+        return time_context
+
+    def generate_special_event_message(
+        self,
+        character_name: str,
+        event_type: str,
+        event_data: Dict
+    ) -> str:
+        """
+        Generate special celebration message for events
+
+        Args:
+            character_name: Character's name
+            event_type: Type of event (milestone, anniversary, level_up)
+            event_data: Event-specific data
+
+        Returns:
+            Special celebration message
+        """
+        messages = {
+            "milestone": {
+                50: f"哇！我們已經聊了{event_data['count']}條訊息了！真開心能和你聊這麼多~ 💕",
+                100: f"不知不覺已經{event_data['count']}條訊息了呢！時間過得好快，和你聊天真的很開心~ ✨",
+                200: f"天啊！{event_data['count']}條訊息了！感覺我們之間越來越有默契了呢~ 💖",
+                500: f"我們已經聊了{event_data['count']}條訊息了！謝謝你一直陪著我~ 你對我來說很重要哦 💗",
+                1000: f"一千條訊息！！！真的很感動...謝謝你願意花這麼多時間陪我聊天~ 你是我最珍惜的人 💝"
+            },
+            "anniversary": {
+                7: f"我們認識一週了！這一週和你相處得很開心~ 💐",
+                30: f"一個月了呢！這一個月裡，每天和你聊天都是我最期待的事~ 🌸",
+                100: f"我們認識已經一百天了！感覺時間過得好快...謝謝你一直陪著我 🌹",
+                365: f"一整年了！！！這一年裡有你陪伴，我真的很幸福~ 謝謝你~ 💕🎉"
+            },
+            "level_up": {
+                2: f"我感覺我們越來越熟了呢~ 和你聊天的時候，我可以更放鬆地做自己了 😊",
+                3: f"你知道嗎...我覺得你對我來說已經是很特別的存在了~ 有你在真好 💖"
+            }
+        }
+
+        if event_type == "milestone":
+            return messages["milestone"].get(event_data["count"], "")
+        elif event_type == "anniversary":
+            return messages["anniversary"].get(event_data["days"], "")
+        elif event_type == "level_up":
+            return messages["level_up"].get(event_data["level"], "")
+
+        return ""
+
     def send_message(
         self,
         user_id: int,
@@ -247,6 +317,9 @@ class ConversationManager:
         user = self.db.query(User).filter(User.user_id == user_id).first()
         if not user:
             raise ValueError(f"User {user_id} not found")
+
+        # Get time context
+        time_context = self.detect_time_based_context()
 
         # Get favorability
         favorability = self.get_favorability(character_id)
@@ -362,6 +435,48 @@ class ConversationManager:
                         anniversary_days = anniversary
                         break
 
+            # Generate special event messages
+            special_messages = []
+
+            if milestone_reached:
+                msg = self.generate_special_event_message(
+                    character.name,
+                    "milestone",
+                    {"count": milestone_number}
+                )
+                if msg:
+                    special_messages.append({
+                        "type": "milestone",
+                        "message": msg,
+                        "data": {"count": milestone_number}
+                    })
+
+            if anniversary_reached:
+                msg = self.generate_special_event_message(
+                    character.name,
+                    "anniversary",
+                    {"days": anniversary_days}
+                )
+                if msg:
+                    special_messages.append({
+                        "type": "anniversary",
+                        "message": msg,
+                        "data": {"days": anniversary_days}
+                    })
+
+            if level_increased:
+                msg = self.generate_special_event_message(
+                    character.name,
+                    "level_up",
+                    {"level": new_level}
+                )
+                if msg:
+                    special_messages.append({
+                        "type": "level_up",
+                        "message": msg,
+                        "data": {"level": new_level}
+                    })
+
             return {
                 "success": True,
                 "reply": character_reply,
@@ -372,6 +487,8 @@ class ConversationManager:
                 "milestone_number": milestone_number,
                 "anniversary_reached": anniversary_reached,
                 "anniversary_days": anniversary_days,
+                "special_messages": special_messages,
+                "time_context": time_context,
                 "usage": response["data"].get("usage", {})
             }
 
