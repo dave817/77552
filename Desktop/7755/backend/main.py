@@ -492,6 +492,36 @@ async def get_character_profile(character_id: int, db: Session = Depends(get_db)
         raise HTTPException(status_code=500, detail=f"獲取角色資料失敗: {str(e)}")
 
 
+@app.delete("/api/v2/delete-character/{character_id}")
+async def delete_character_endpoint(character_id: int, db: Session = Depends(get_db)) -> Dict:
+    """
+    Delete a character and all associated data
+
+    Args:
+        character_id: Character ID to delete
+        db: Database session
+
+    Returns:
+        Success status
+    """
+    try:
+        conv_manager = ConversationManager(db, api_client)
+        success = conv_manager.delete_character(character_id)
+
+        if success:
+            return {
+                "success": True,
+                "message": "角色已成功刪除"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="角色不存在")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"刪除角色失敗: {str(e)}")
+
+
 @app.get("/api/v2/export-conversation/{character_id}")
 async def export_conversation(
     character_id: int,
@@ -1233,6 +1263,7 @@ async def ui2():
 
                 <div class="button-group" style="margin-top: 20px;">
                     <button class="profile-button" onclick="viewProfile()">📊 查看角色檔案</button>
+                    <button class="profile-button" onclick="viewCharacters()">💕 角色管理</button>
                     <button onclick="location.reload()">重新開始</button>
                 </div>
             </div>
@@ -1579,6 +1610,10 @@ async def ui2():
                     alert('請先生成角色！');
                 }
             }
+
+            function viewCharacters() {
+                window.location.href = '/characters';
+            }
         </script>
     </body>
     </html>
@@ -1923,6 +1958,438 @@ async def character_profile_page():
 
         // Load profile on page load
         loadProfile();
+    </script>
+</body>
+</html>
+        """,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@app.get("/characters")
+async def character_management():
+    """Character Management Page - manage multiple characters"""
+    return HTMLResponse(
+        content="""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>角色管理 - 戀愛聊天機器人</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: "Microsoft YaHei", "微軟正黑體", sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .page-title {
+            font-size: 32px;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .page-subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+        .characters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .character-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+        .character-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        .character-card.active {
+            border: 3px solid #667eea;
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+        }
+        .character-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+        }
+        .character-info {
+            flex: 1;
+        }
+        .character-name {
+            font-size: 28px;
+            color: #333;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .character-nickname {
+            color: #666;
+            font-size: 16px;
+            font-style: italic;
+        }
+        .character-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .icon-button {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 5px;
+            transition: transform 0.2s;
+        }
+        .icon-button:hover {
+            transform: scale(1.2);
+        }
+        .character-stats {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 12px;
+            margin: 15px 0;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
+        .stat-label {
+            color: #666;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: #333;
+        }
+        .favorability-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+        }
+        .favorability-badge.level-1 { background: #9e9e9e; }
+        .favorability-badge.level-2 { background: #ff9800; }
+        .favorability-badge.level-3 { background: #e91e63; }
+        .character-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .button-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .button-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .button-secondary {
+            background: #f8f9fa;
+            color: #667eea;
+        }
+        .button-secondary:hover {
+            background: #e9ecef;
+        }
+        .button-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .button-danger:hover {
+            background: #c82333;
+        }
+        .create-card {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border: 3px dashed #667eea;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 300px;
+        }
+        .create-card:hover {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+        }
+        .create-icon {
+            font-size: 60px;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .create-text {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .empty-state {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .empty-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        .empty-title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .empty-text {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 24px;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .back-button {
+            display: inline-block;
+            padding: 12px 30px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+            margin-top: 20px;
+        }
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-card">
+            <div class="page-title">💕 角色管理</div>
+            <div class="page-subtitle">管理你的所有角色，切換或建立新的對話夥伴</div>
+        </div>
+
+        <div id="loading" class="loading">
+            載入角色中...
+        </div>
+
+        <div id="content" style="display: none;">
+            <div class="characters-grid" id="charactersGrid"></div>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div style="text-align: center;">
+            <a href="/ui2" class="back-button">返回首頁</a>
+        </div>
+    </div>
+
+    <script>
+        let userId = null;
+
+        async function loadCharacters() {
+            // Get user ID from localStorage
+            userId = localStorage.getItem('userId');
+
+            if (!userId) {
+                showError('請先建立一個角色！');
+                document.getElementById('loading').style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/user-characters/${userId}`);
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (data.success) {
+                    displayCharacters(data.characters);
+                } else {
+                    showError('載入角色失敗');
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showError('載入失敗: ' + error.message);
+            }
+        }
+
+        function displayCharacters(characters) {
+            const grid = document.getElementById('charactersGrid');
+            const currentCharacterId = parseInt(localStorage.getItem('characterId'));
+
+            if (characters.length === 0) {
+                document.getElementById('content').innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🤖</div>
+                        <div class="empty-title">還沒有角色</div>
+                        <div class="empty-text">快來建立你的第一個專屬角色吧！</div>
+                        <a href="/ui2" class="button button-primary" style="display: inline-block; text-decoration: none; padding: 15px 40px;">建立新角色</a>
+                    </div>
+                `;
+                document.getElementById('content').style.display = 'block';
+                return;
+            }
+
+            grid.innerHTML = characters.map(char => {
+                const isActive = char.character_id === currentCharacterId;
+                const levelClass = `level-${char.favorability}`;
+                const levelText = char.favorability === 1 ? '陌生期' :
+                                 char.favorability === 2 ? '熟悉期' : '親密期';
+                const createdDate = new Date(char.created_at).toLocaleDateString('zh-TW');
+
+                return `
+                    <div class="character-card ${isActive ? 'active' : ''}" onclick="selectCharacter(${char.character_id})">
+                        <div class="character-header">
+                            <div class="character-info">
+                                <div class="character-name">${char.name}</div>
+                                ${char.nickname ? `<div class="character-nickname">${char.nickname}</div>` : ''}
+                            </div>
+                            ${isActive ? '<div style="font-size: 24px;">✨</div>' : ''}
+                        </div>
+
+                        <div class="character-stats">
+                            <div class="stat-row">
+                                <span class="stat-label">好感度</span>
+                                <span class="favorability-badge ${levelClass}">${levelText}</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">建立時間</span>
+                                <span class="stat-value">${createdDate}</span>
+                            </div>
+                        </div>
+
+                        <div class="character-buttons">
+                            <button class="button button-primary" onclick="event.stopPropagation(); chatWithCharacter(${char.character_id})">
+                                💬 開始聊天
+                            </button>
+                            <button class="button button-secondary" onclick="event.stopPropagation(); viewProfile(${char.character_id})">
+                                📋 查看檔案
+                            </button>
+                            <button class="button button-danger" onclick="event.stopPropagation(); deleteCharacter(${char.character_id}, '${char.name}')">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add create new character card
+            grid.innerHTML += `
+                <div class="character-card create-card" onclick="createNewCharacter()">
+                    <div class="create-icon">➕</div>
+                    <div class="create-text">建立新角色</div>
+                </div>
+            `;
+
+            document.getElementById('content').style.display = 'block';
+        }
+
+        function selectCharacter(characterId) {
+            localStorage.setItem('characterId', characterId);
+            loadCharacters(); // Reload to update active state
+        }
+
+        function chatWithCharacter(characterId) {
+            localStorage.setItem('characterId', characterId);
+            window.location.href = '/ui2';
+        }
+
+        function viewProfile(characterId) {
+            window.location.href = `/profile?character_id=${characterId}`;
+        }
+
+        async function deleteCharacter(characterId, characterName) {
+            if (!confirm(`確定要刪除 ${characterName} 嗎？\n\n刪除後將無法恢復所有對話記錄！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v2/delete-character/${characterId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('角色已刪除');
+
+                    // If deleted current character, clear from localStorage
+                    if (parseInt(localStorage.getItem('characterId')) === characterId) {
+                        localStorage.removeItem('characterId');
+                        localStorage.removeItem('generatedCharacter');
+                    }
+
+                    loadCharacters(); // Reload list
+                } else {
+                    alert('刪除失敗: ' + (data.error || '未知錯誤'));
+                }
+            } catch (error) {
+                alert('刪除失敗: ' + error.message);
+            }
+        }
+
+        function createNewCharacter() {
+            window.location.href = '/ui2';
+        }
+
+        function showError(message) {
+            document.getElementById('error').textContent = message;
+            document.getElementById('error').style.display = 'block';
+        }
+
+        // Load characters on page load
+        loadCharacters();
     </script>
 </body>
 </html>
