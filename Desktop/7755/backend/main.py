@@ -5,8 +5,10 @@ Phase 1: User Onboarding & Character Generation
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Dict, List, Optional
+import os
 
 from backend.models import UserProfile, DreamType, CustomMemory
 from backend.character_generator import CharacterGenerator
@@ -17,6 +19,11 @@ from sqlalchemy.orm import Session
 from fastapi import Depends
 
 app = FastAPI(title="Dating Chatbot API", version="1.0.0")
+
+# Mount static files for profile pictures
+pictures_path = "/Users/journeyofdave817/Documents/7755(2)/7755/Desktop/7755/pictures"
+if os.path.exists(pictures_path):
+    app.mount("/static/pictures", StaticFiles(directory=pictures_path), name="pictures")
 
 # CORS middleware for frontend access
 app.add_middleware(
@@ -221,7 +228,8 @@ async def create_character_v2(user_profile: UserProfile, db: Session = Depends(g
                 "gender": character.gender,
                 "identity": character.identity,
                 "detail_setting": character.detail_setting,
-                "other_setting": character.other_setting
+                "other_setting": character.other_setting,
+                "profile_picture": character.profile_picture
             },
             "initial_message": initial_message,
             "favorability_level": 1,

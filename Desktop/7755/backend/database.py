@@ -60,6 +60,7 @@ class Character(Base):
     detail_setting = Column(Text)  # Up to 500 chars
     other_setting = Column(JSON)  # JSON stored as text
     knowledge_base_id = Column(String(100))  # SenseChat knowledge base ID
+    profile_picture = Column(String(500))  # Path to character's profile picture
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships

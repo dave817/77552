@@ -3,6 +3,7 @@ Character Generator - Generates AI character profiles based on user preferences
 """
 import json
 from typing import Dict, List, Optional
+from opencc import OpenCC
 from backend.models import UserProfile, DreamType, CustomMemory, PersonalityType
 
 
@@ -17,6 +18,8 @@ class CharacterGenerator:
             api_client: Optional SenseChatClient for AI-generated backgrounds
         """
         self.api_client = api_client
+        # Traditional Chinese converter
+        self.tc_converter = OpenCC('s2twp')
 
     # Character name mappings based on personality and gender
     NAME_MAPPINGS = {
@@ -380,6 +383,9 @@ class CharacterGenerator:
             if len(story) > 200:
                 story = story[:197] + "..."
 
+            # Convert to Traditional Chinese
+            story = self.tc_converter.convert(story)
+
             return story
 
         except Exception as e:
@@ -551,5 +557,8 @@ class CharacterGenerator:
             interest = user_profile.dream_type.interests[0]
             interest_response = interest_responses[personality_type].format(interest=interest)
             greeting += " " + interest_response
+
+        # Convert to Traditional Chinese (in case any Simplified Chinese slipped in)
+        greeting = self.tc_converter.convert(greeting)
 
         return greeting

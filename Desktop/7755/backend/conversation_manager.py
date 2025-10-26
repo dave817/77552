@@ -6,6 +6,9 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 from datetime import datetime
 import json
+import os
+import random
+from opencc import OpenCC
 
 from backend.database import User, Character, Message, FavorabilityTracking, UserPreference
 from backend.api_client import SenseChatClient
@@ -31,6 +34,42 @@ class ConversationManager:
         """
         self.db = db
         self.api_client = api_client
+        # Picture directories
+        self.base_picture_path = "/Users/journeyofdave817/Documents/7755(2)/7755/Desktop/7755/pictures"
+        self.male_picture_dir = os.path.join(self.base_picture_path, "male")
+        self.female_picture_dir = os.path.join(self.base_picture_path, "female")
+        # Traditional Chinese converter
+        self.tc_converter = OpenCC('s2twp')
+
+    def _to_traditional_chinese(self, text: str) -> str:
+        """Convert Simplified Chinese to Traditional Chinese"""
+        try:
+            return self.tc_converter.convert(text)
+        except Exception as e:
+            print(f"Warning: Failed to convert to Traditional Chinese: {e}")
+            return text
+
+    def _select_random_picture(self, gender: str) -> Optional[str]:
+        """Select a random profile picture based on gender"""
+        picture_dir = self.male_picture_dir if "男" in gender else self.female_picture_dir
+        if not os.path.exists(picture_dir):
+            print(f"Warning: Picture directory {picture_dir} does not exist")
+            return None
+        try:
+            all_files = os.listdir(picture_dir)
+            image_files = [
+                f for f in all_files
+                if f.lower().endswith(('.png', '.jpg', '.jpeg')) and not f.startswith('.')
+            ]
+            if not image_files:
+                print(f"Warning: No image files found in {picture_dir}")
+                return None
+            selected_image = random.choice(image_files)
+            full_path = os.path.join(picture_dir, selected_image)
+            return full_path
+        except Exception as e:
+            print(f"Error selecting picture: {e}")
+            return None
 
     def get_or_create_user(self, username: str) -> User:
         """
@@ -65,6 +104,9 @@ class ConversationManager:
         Returns:
             Character object
         """
+        # Select a random profile picture based on gender
+        profile_picture = self._select_random_picture(character_data["gender"])
+
         character = Character(
             user_id=user_id,
             name=character_data["name"],
@@ -74,7 +116,8 @@ class ConversationManager:
             detail_setting=character_data.get("detail_setting"),
             other_setting=json.loads(character_data["other_setting"]) if isinstance(
                 character_data.get("other_setting"), str
-            ) else character_data.get("other_setting")
+            ) else character_data.get("other_setting"),
+            profile_picture=profile_picture
         )
 
         self.db.add(character)
@@ -283,14 +326,16 @@ class ConversationManager:
             }
         }
 
+        message = ""
         if event_type == "milestone":
-            return messages["milestone"].get(event_data["count"], "")
+            message = messages["milestone"].get(event_data["count"], "")
         elif event_type == "anniversary":
-            return messages["anniversary"].get(event_data["days"], "")
+            message = messages["anniversary"].get(event_data["days"], "")
         elif event_type == "level_up":
-            return messages["level_up"].get(event_data["level"], "")
+            message = messages["level_up"].get(event_data["level"], "")
 
-        return ""
+        # Convert to Traditional Chinese
+        return self._to_traditional_chinese(message) if message else ""
 
     def send_message(
         self,
@@ -390,6 +435,8 @@ class ConversationManager:
             )
 
             character_reply = response["data"]["reply"]
+            # Convert to Traditional Chinese
+            character_reply = self._to_traditional_chinese(character_reply)
 
             # Save character's response
             self.save_message(
